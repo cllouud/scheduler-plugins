@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: linux-arm64-npu-1
+  namespace: cllouud
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: test
+  template:
+    metadata:
+      labels:
+        app: test
+    spec:
+      schedulerName: runner-pod-npu-scheduler
+      containers:
+      - image: busybox:1.28
+        name: nginx
+        command:
+          - /bin/sh
+          - -c
+          - sleep 3600

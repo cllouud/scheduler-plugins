@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: runner-pod-npu-scheduler
+    namespace: kube-system
+    labels:
+        component: runner-pod-npu-scheduler
+spec:
+    replicas: 1
+    selector:
+        matchLabels:
+            component: runner-pod-npu-scheduler
+    template:
+        metadata:
+            labels:
+                component: runner-pod-npu-scheduler
+        spec:
+            serviceAccountName: runner-pod-npu-scheduler
+            containers:
+                - name: scheduler
+                  image: hub-proxy.test.osinfra.cn/dodok0a/scheduler-plugins:v10
+                  imagePullPolicy: Always
+                  command:
+                      - /bin/kube-scheduler
+                      - --config=/etc/kubernetes/scheduler-config.yaml
+                      - --v=3
+                  volumeMounts:
+                      - name: config
+                        mountPath: /etc/kubernetes
+            volumes:
+                - name: config
+                  configMap:
+                      name: runner-pod-npu-scheduler-config
