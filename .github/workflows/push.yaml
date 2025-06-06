@@ -12,6 +12,7 @@ jobs:
           ref: release-1.28
 
       - run: |
+          pwd
           ls -l
           tree
 
