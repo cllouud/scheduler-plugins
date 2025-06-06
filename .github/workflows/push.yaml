@@ -35,4 +35,4 @@ jobs:
           build-args: |
             ARCH=arm64v8
             RELEASE_VERSION=v1.0
-          tags: ${{ vars.DOCKERHUB_USERNAME }}/runner-pod-npu-scheduler:${{ github.sha }}
+          tags: ${{ vars.DOCKERHUB_USERNAME }}/scheduler-plugins:${{ github.sha }}
