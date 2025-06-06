@@ -7,14 +7,14 @@ jobs:
     name: Run npm on Ubuntu
     runs-on: ubuntu-latest
     steps:
-      # - uses: actions/checkout@v4
-      #   with:
-      #     ref: release-1.28
+      - uses: actions/checkout@v4
+        with:
+          ref: release-1.28
 
-      # - run: |
-      #     pwd
-      #     ls -l
-      #     tree
+      - run: |
+          pwd
+          ls -l
+          tree
 
       - uses: docker/login-action@v3
         with:
@@ -30,6 +30,6 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          file: /home/runner/work/scheduler-plugins/scheduler-plugins/Dockerfile
+          context: .
           push: true
           tags: ${{ vars.DOCKERHUB_USERNAME }}/runner-pod-npu-scheduler:${{ github.sha }}
