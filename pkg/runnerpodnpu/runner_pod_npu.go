@@ -5,15 +5,16 @@ import (
 	"fmt"
 	"log"
 	"strconv"
-	"strings"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	framework "k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
-// Name is the name of the plugin used in the plugin registry and configurations.
-const Name = "labelAB"
+const (
+	Name          = "labelAB"
+	npuCountLabel = "ascend-ci.com/required-npu-count"
+)
 
 type labelAB struct{}
 
@@ -31,31 +32,47 @@ func (pl *labelAB) Name() string {
 }
 
 func (pl *labelAB) Filter(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
-	desire_npu_count, err := extractNpuCountFromPodName(pod.Name)
-	if err != nil {
-		log.Printf("extractNpuCountFromPodName error: %v", err)
-	}
-
-	log.Printf("node: %v, nodeInfo: %v", nodeInfo.Node().Name, nodeInfo)
-
-	allocatable_npu_count, ok := nodeInfo.Allocatable.ScalarResources["huawei.com/ascend-1980"]
-	if !ok {
-		log.Printf("can not get allocatable_npu_count from node")
-	}
-
-	requested_npu_count, ok := nodeInfo.Requested.ScalarResources["huawei.com/ascend-1980"]
-	if !ok {
-		log.Printf("can not get requested_npu_count from node")
-	}
-
-	log.Printf("desire_npu_count: %v, pod_name: %v, allocatable_npu_count: %v, requested_npu_count: %v",
-		desire_npu_count, pod.Name, allocatable_npu_count, requested_npu_count)
-
-	if int64(desire_npu_count) <= allocatable_npu_count-requested_npu_count {
+	schedulingPodNpuCount, exists, err := extractNpuCountFromPodLabel(pod)
+	if !exists {
 		return framework.NewStatus(framework.Success, "")
-	} else {
-		return framework.NewStatus(framework.Unschedulable, "npu count not enough")
 	}
+	if err != nil {
+		return framework.NewStatus(framework.Unschedulable, err.Error())
+	}
+
+	allocatedNpuCount := 0
+	for _, podInfo := range nodeInfo.Pods {
+		podNpuCount, exists, err := extractNpuCountFromPodLabel(podInfo.Pod)
+		if !exists {
+			continue
+		}
+		if err != nil {
+			return framework.NewStatus(framework.Unschedulable, err.Error())
+		}
+		allocatedNpuCount += podNpuCount
+
+		log.Printf("node: %v, pod: %v, podNpuCount: %v, allocatedNpuCount: %v, schePod: %v, scheCount: %v", nodeInfo.Node().Name, podInfo.Pod.Name, podNpuCount, allocatedNpuCount, pod.Name, schedulingPodNpuCount)
+	}
+
+	allocatableNpuCount, ok := nodeInfo.Allocatable.ScalarResources["huawei.com/ascend-1980"]
+	if !ok {
+		return framework.NewStatus(framework.Unschedulable, "can not get allocatable_npu_count from node")
+	}
+
+	names := make([]string, 0, len(nodeInfo.Pods))
+	for _, pod := range nodeInfo.Pods {
+		if pod.Pod != nil {
+			names = append(names, pod.Pod.Name)
+		}
+	}
+
+	log.Printf("node: %v, allocatedNpuCount: %v, schePod: %v, scheCount: %v, pod names: %v", nodeInfo.Node().Name, allocatedNpuCount, pod.Name, schedulingPodNpuCount, names)
+	if allocatableNpuCount-int64(allocatedNpuCount) < int64(schedulingPodNpuCount) {
+		return framework.NewStatus(framework.Unschedulable, "current node has no enough npu")
+	}
+
+	return framework.NewStatus(framework.Success, "")
+
 }
 
 func (pl *labelAB) PreScore(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodes []*v1.Node) *framework.Status {
@@ -63,15 +80,15 @@ func (pl *labelAB) PreScore(ctx context.Context, state *framework.CycleState, po
 	return framework.NewStatus(framework.Success, "Pod: "+pod.Name)
 }
 
-func extractNpuCountFromPodName(name string) (int, error) {
-	parts := strings.Split(name, "-")
-	if len(parts) < 4 {
-		return -1, fmt.Errorf("can not extract name: %s", name)
+func extractNpuCountFromPodLabel(pod *v1.Pod) (int, bool, error) {
+	labelValue, exists := pod.Labels[npuCountLabel]
+	if !exists {
+		return 0, exists, nil
 	}
 
-	if count, err := strconv.Atoi(parts[3]); err != nil {
-		return -1, fmt.Errorf("can not extract name: %s", name)
-	} else {
-		return count, nil
+	npuCount, err := strconv.Atoi(labelValue)
+	if err != nil {
+		return 0, exists, fmt.Errorf("failed to parse NPU count, pod: %v, label: %v", pod, pod.Labels[npuCountLabel])
 	}
+	return npuCount, exists, nil
 }

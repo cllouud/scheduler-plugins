@@ -18,7 +18,7 @@ spec:
             serviceAccountName: runner-pod-npu-scheduler
             containers:
                 - name: scheduler
-                  image: hub-proxy.test.osinfra.cn/dodok0a/scheduler-plugins:v10
+                  image: hub-proxy.test.osinfra.cn/dodok0a/scheduler-plugins:v20
                   imagePullPolicy: Always
                   command:
                       - /bin/kube-scheduler

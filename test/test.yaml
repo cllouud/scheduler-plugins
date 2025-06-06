@@ -4,7 +4,7 @@ metadata:
   name: linux-arm64-npu-1
   namespace: cllouud
 spec:
-  replicas: 5
+  replicas: 1
   selector:
     matchLabels:
       app: test
@@ -21,3 +21,18 @@ spec:
           - /bin/sh
           - -c
           - sleep 3600
+        volumeMounts:
+            - name: shared-volume
+              mountPath: /shared-data
+            - name: check-npu
+              mountPath: /check-npu
+      volumes:
+        - name: shared-volume
+          persistentVolumeClaim:
+            claimName: ascend-ci-share
+        - name: check-npu
+          configMap:
+            name: check-npu
+
+
+        
