@@ -16,5 +16,4 @@ data:
             plugins:
               filter:
                 enabled:
-                  - name: labelAB
-
+                  - name: runnerScheduler

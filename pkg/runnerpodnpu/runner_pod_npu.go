@@ -8,30 +8,36 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/klog/v2"
 	framework "k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
 const (
-	Name          = "labelAB"
+	Name          = "runnerScheduler"
 	npuCountLabel = "ascend-ci.com/required-npu-count"
 )
 
-type labelAB struct{}
+type runnerScheduler struct{}
 
-var _ framework.FilterPlugin = &labelAB{}
-var _ framework.PreScorePlugin = &labelAB{}
+var _ framework.FilterPlugin = &runnerScheduler{}
+var _ framework.PreScorePlugin = &runnerScheduler{}
 
 // New initializes a new plugin and returns it.
 func New(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
-	return &labelAB{}, nil
+	return &runnerScheduler{}, nil
 }
 
 // Name returns name of the plugin.
-func (pl *labelAB) Name() string {
+func (pl *runnerScheduler) Name() string {
 	return Name
 }
 
-func (pl *labelAB) Filter(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
+// 根据待调度pod与当前节点的剩余NPU卡判断是否可以调度到当前节点。
+// 调度pod的`label.ascend-ci.com/required-npu-count`表明pod所需NPU卡。
+// 当前节点的`allocatable.huawei.com/ascend-1980`表明当前节点的总卡数。
+// 遍历当前节点的所有pod，将其`label.ascend-ci.com/required-npu-count`相加，作为当前节点已分配卡数。
+// 如果当前节点的总卡数-当前节点已分配卡数<=pod所需NPU卡，则可以将pod分配到当前节点。
+func (pl *runnerScheduler) Filter(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
 	schedulingPodNpuCount, exists, err := extractNpuCountFromPodLabel(pod)
 	if !exists {
 		return framework.NewStatus(framework.Success, "")
@@ -41,17 +47,19 @@ func (pl *labelAB) Filter(ctx context.Context, state *framework.CycleState, pod 
 	}
 
 	allocatedNpuCount := 0
+	names := make([]string, 0, len(nodeInfo.Pods))
 	for _, podInfo := range nodeInfo.Pods {
 		podNpuCount, exists, err := extractNpuCountFromPodLabel(podInfo.Pod)
-		if !exists {
+		if !exists || err != nil {
 			continue
-		}
-		if err != nil {
-			return framework.NewStatus(framework.Unschedulable, err.Error())
 		}
 		allocatedNpuCount += podNpuCount
 
-		log.Printf("node: %v, pod: %v, podNpuCount: %v, allocatedNpuCount: %v, schePod: %v, scheCount: %v", nodeInfo.Node().Name, podInfo.Pod.Name, podNpuCount, allocatedNpuCount, pod.Name, schedulingPodNpuCount)
+		klog.V(4).InfoS("node: %v, pod: %v, podNpuCount: %v, allocatedNpuCount: %v, schePod: %v, scheCount: %v", nodeInfo.Node().Name, podInfo.Pod.Name, podNpuCount, allocatedNpuCount, pod.Name, schedulingPodNpuCount)
+
+		if podInfo.Pod != nil {
+			names = append(names, podInfo.Pod.Name)
+		}
 	}
 
 	allocatableNpuCount, ok := nodeInfo.Allocatable.ScalarResources["huawei.com/ascend-1980"]
@@ -59,15 +67,10 @@ func (pl *labelAB) Filter(ctx context.Context, state *framework.CycleState, pod 
 		return framework.NewStatus(framework.Unschedulable, "can not get allocatable_npu_count from node")
 	}
 
-	names := make([]string, 0, len(nodeInfo.Pods))
-	for _, pod := range nodeInfo.Pods {
-		if pod.Pod != nil {
-			names = append(names, pod.Pod.Name)
-		}
-	}
+	klog.InfoS("Node status", "node name:", nodeInfo.Node().Name, "allocatable npu:", allocatableNpuCount, "allocated npu:", allocatedNpuCount, "scheduling count", schedulingPodNpuCount, "node pod names:", names)
 
-	log.Printf("node: %v, allocatedNpuCount: %v, schePod: %v, scheCount: %v, pod names: %v", nodeInfo.Node().Name, allocatedNpuCount, pod.Name, schedulingPodNpuCount, names)
 	if allocatableNpuCount-int64(allocatedNpuCount) < int64(schedulingPodNpuCount) {
+		klog.Infof("current node has no enough npu, node name : %v", nodeInfo.Node().Name)
 		return framework.NewStatus(framework.Unschedulable, "current node has no enough npu")
 	}
 
@@ -75,7 +78,7 @@ func (pl *labelAB) Filter(ctx context.Context, state *framework.CycleState, pod 
 
 }
 
-func (pl *labelAB) PreScore(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodes []*v1.Node) *framework.Status {
+func (pl *runnerScheduler) PreScore(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodes []*v1.Node) *framework.Status {
 	log.Printf("PreScore: %+v", nodes)
 	return framework.NewStatus(framework.Success, "Pod: "+pod.Name)
 }
