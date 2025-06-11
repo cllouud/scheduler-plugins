@@ -47,8 +47,11 @@ func (pl *runnerScheduler) Filter(ctx context.Context, state *framework.CycleSta
 	}
 
 	allocatedNpuCount := 0
-	names := make([]string, 0, len(nodeInfo.Pods))
+	podNames := make([]string, 0, len(nodeInfo.Pods))
 	for _, podInfo := range nodeInfo.Pods {
+		if podInfo.Pod != nil {
+			podNames = append(podNames, podInfo.Pod.Name)
+		}
 		podNpuCount, exists, err := extractNpuCountFromPodLabel(podInfo.Pod)
 		if !exists || err != nil {
 			continue
@@ -56,10 +59,6 @@ func (pl *runnerScheduler) Filter(ctx context.Context, state *framework.CycleSta
 		allocatedNpuCount += podNpuCount
 
 		klog.V(4).InfoS("node: %v, pod: %v, podNpuCount: %v, allocatedNpuCount: %v, schePod: %v, scheCount: %v", nodeInfo.Node().Name, podInfo.Pod.Name, podNpuCount, allocatedNpuCount, pod.Name, schedulingPodNpuCount)
-
-		if podInfo.Pod != nil {
-			names = append(names, podInfo.Pod.Name)
-		}
 	}
 
 	allocatableNpuCount, ok := nodeInfo.Allocatable.ScalarResources["huawei.com/ascend-1980"]
@@ -67,7 +66,7 @@ func (pl *runnerScheduler) Filter(ctx context.Context, state *framework.CycleSta
 		return framework.NewStatus(framework.Unschedulable, "can not get allocatable_npu_count from node")
 	}
 
-	klog.InfoS("Node status", "nodeName", nodeInfo.Node().Name, "allocatableNpu", allocatableNpuCount, "allocatedNpu", allocatedNpuCount, "schedulingCount", schedulingPodNpuCount, "schedulingPod", pod.Name, "nodePodsNames", names)
+	klog.InfoS("Node status", "nodeName", nodeInfo.Node().Name, "allocatableNpu", allocatableNpuCount, "allocatedNpu", allocatedNpuCount, "schedulingCount", schedulingPodNpuCount, "schedulingPod", pod.Name, "nodePodsNames", podNames)
 
 	if allocatableNpuCount-int64(allocatedNpuCount) < int64(schedulingPodNpuCount) {
 		klog.Infof("current node has no enough npu, node name : %v", nodeInfo.Node().Name)
