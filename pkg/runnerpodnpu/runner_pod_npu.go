@@ -67,7 +67,7 @@ func (pl *runnerScheduler) Filter(ctx context.Context, state *framework.CycleSta
 		return framework.NewStatus(framework.Unschedulable, "can not get allocatable_npu_count from node")
 	}
 
-	klog.InfoS("Node status", "node name:", nodeInfo.Node().Name, "allocatable npu:", allocatableNpuCount, "allocated npu:", allocatedNpuCount, "scheduling count", schedulingPodNpuCount, "node pod names:", names)
+	klog.InfoS("Node status", "nodeName", nodeInfo.Node().Name, "allocatableNpu", allocatableNpuCount, "allocatedNpu", allocatedNpuCount, "schedulingCount", schedulingPodNpuCount, "schedulingPod", pod.Name, "nodePodsNames", names)
 
 	if allocatableNpuCount-int64(allocatedNpuCount) < int64(schedulingPodNpuCount) {
 		klog.Infof("current node has no enough npu, node name : %v", nodeInfo.Node().Name)
