@@ -13,7 +13,7 @@ jobs:
 
       - uses: docker/login-action@v3
         with:
-          registry: ${{ vars.SWR_REGISTRY }}
+          registry: ${{ secrets.SWR_REGISTRY }}
           username: ${{ secrets.SWR_USERNAME }}
           password: ${{ secrets.SWR_TOKEN }}
 
@@ -32,4 +32,4 @@ jobs:
           build-args: |
             ARCH=arm64v8
             RELEASE_VERSION=v1.0
-          tags: ${{ secrets.SWR_USERNAME }}/scheduler-plugins:${{ github.sha }}
+          tags: ${{ secrets.SWR_IMAGE }}:${{ github.sha }}
