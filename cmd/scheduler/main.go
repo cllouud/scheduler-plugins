@@ -17,13 +17,11 @@ limitations under the License.
 package main
 
 import (
-	"flag"
 	"os"
 
 	"k8s.io/component-base/cli"
 	_ "k8s.io/component-base/metrics/prometheus/clientgo" // for rest client metric registration
 	_ "k8s.io/component-base/metrics/prometheus/version"  // for version metric registration
-	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/cmd/kube-scheduler/app"
 
 	runnernpu "sigs.k8s.io/scheduler-plugins/pkg/runnerpodnpu"
@@ -33,9 +31,6 @@ import (
 )
 
 func main() {
-	klog.InitFlags(nil)
-	flag.Parse()
-	defer klog.Flush()
 	// Register custom plugins to the scheduler framework.
 	// Later they can consist of scheduler profile(s) and hence
 	// used by various kinds of workloads.
