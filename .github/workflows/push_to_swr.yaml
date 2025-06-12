@@ -27,9 +27,9 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           platforms: linux/arm64
+          file: ./build/scheduler/Dockerfile
           context: .
           push: true
           build-args: |
             ARCH=arm64v8
-            RELEASE_VERSION=v1.0
           tags: ${{ secrets.SWR_IMAGE }}:${{ github.sha }}
