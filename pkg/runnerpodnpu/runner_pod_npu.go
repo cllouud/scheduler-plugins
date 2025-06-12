@@ -13,8 +13,10 @@ import (
 )
 
 const (
-	Name          = "runnerScheduler"
-	npuCountLabel = "ascend-ci.com/required-npu-count"
+	Name                   = "runnerScheduler"
+	npuCountLabel          = "ascend-ci.com/required-npu-count"
+	npuResourceDomainLabel = "ascend-ci.com/npu-resource-domain"
+	npuResourceModelLabel  = "ascend-ci.com/npu-resource-model"
 )
 
 type runnerScheduler struct{}
@@ -58,15 +60,15 @@ func (pl *runnerScheduler) Filter(ctx context.Context, state *framework.CycleSta
 		}
 		allocatedNpuCount += podNpuCount
 
-		klog.V(4).InfoS("node: %v, pod: %v, podNpuCount: %v, allocatedNpuCount: %v, schePod: %v, scheCount: %v", nodeInfo.Node().Name, podInfo.Pod.Name, podNpuCount, allocatedNpuCount, pod.Name, schedulingPodNpuCount)
+		klog.InfoS("pod status", "nodeName", nodeInfo.Node().Name, "podName", podInfo.Pod.Name, "podNpuCount", podNpuCount, "allocatedNpuCount", allocatedNpuCount, "schedulingPod", pod.Name, "schedulingPodNpuCount", schedulingPodNpuCount)
 	}
 
-	allocatableNpuCount, ok := nodeInfo.Allocatable.ScalarResources["huawei.com/ascend-1980"]
+	allocatableNpuCount, ok := nodeInfo.Allocatable.ScalarResources[v1.ResourceName(getResourceTypeFromNode(nodeInfo.Node()))]
 	if !ok {
 		return framework.NewStatus(framework.Unschedulable, "can not get allocatable_npu_count from node")
 	}
 
-	klog.InfoS("Node status", "nodeName", nodeInfo.Node().Name, "allocatableNpu", allocatableNpuCount, "allocatedNpu", allocatedNpuCount, "schedulingCount", schedulingPodNpuCount, "schedulingPod", pod.Name, "nodePodsNames", podNames)
+	klog.InfoS("Node status", "nodeName", nodeInfo.Node().Name, "allocatableNpu", allocatableNpuCount, "allocatedNpu", allocatedNpuCount, "schedulingCount", schedulingPodNpuCount, "schedulingPod", pod.Name, npuResourceDomainLabel, nodeInfo.Node().Labels[npuResourceDomainLabel], npuResourceModelLabel, nodeInfo.Node().Labels[npuResourceModelLabel], "nodePodsNames", podNames)
 
 	if allocatableNpuCount-int64(allocatedNpuCount) < int64(schedulingPodNpuCount) {
 		klog.Infof("current node has no enough npu, node name : %v", nodeInfo.Node().Name)
@@ -74,12 +76,21 @@ func (pl *runnerScheduler) Filter(ctx context.Context, state *framework.CycleSta
 	}
 
 	return framework.NewStatus(framework.Success, "")
-
 }
 
 func (pl *runnerScheduler) PreScore(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodes []*v1.Node) *framework.Status {
 	log.Printf("PreScore: %+v", nodes)
 	return framework.NewStatus(framework.Success, "Pod: "+pod.Name)
+}
+
+func getResourceTypeFromNode(node *v1.Node) string {
+	domainLabel, domainLabelExists := node.Labels[npuResourceDomainLabel]
+	modelLabel, modelLabelExists := node.Labels[npuResourceModelLabel]
+
+	if !modelLabelExists || !domainLabelExists {
+		return ""
+	}
+	return domainLabel + "/" + modelLabel
 }
 
 func extractNpuCountFromPodLabel(pod *v1.Pod) (int, bool, error) {
