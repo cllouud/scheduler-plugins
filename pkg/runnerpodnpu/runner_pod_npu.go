@@ -36,14 +36,16 @@ func (pl *runnerScheduler) Name() string {
 
 // 根据待调度pod与当前节点的剩余NPU卡判断是否可以调度到当前节点。
 // 调度pod的`label.ascend-ci.com/required-npu-count`表明pod所需NPU卡。
-// 当前节点的`allocatable.huawei.com/ascend-1980`表明当前节点的总卡数。
+// 当前节点的`label.ascend-ci.com/npu-resource-domain`与`ascend-ci.com/npu-resource-model`表明节点的NPU类型，根据NPU类型获当前节点的总卡数。
 // 遍历当前节点的所有pod，将其`label.ascend-ci.com/required-npu-count`相加，作为当前节点已分配卡数。
 // 如果当前节点的总卡数-当前节点已分配卡数<=pod所需NPU卡，则可以将pod分配到当前节点。
 func (pl *runnerScheduler) Filter(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
 	schedulingPodNpuCount, exists, err := extractNpuCountFromPodLabel(pod)
-	if !exists {
-		return framework.NewStatus(framework.Success, "")
+	if !exists || err != nil {
+		return framework.NewStatus(framework.Unschedulable, err.Error())
 	}
+
+	allocatableNpuCount, err := getAllocatableNpuCountFromNode(nodeInfo)
 	if err != nil {
 		return framework.NewStatus(framework.Unschedulable, err.Error())
 	}
@@ -63,11 +65,6 @@ func (pl *runnerScheduler) Filter(ctx context.Context, state *framework.CycleSta
 		klog.InfoS("pod status", "nodeName", nodeInfo.Node().Name, "podName", podInfo.Pod.Name, "podNpuCount", podNpuCount, "allocatedNpuCount", allocatedNpuCount, "schedulingPod", pod.Name, "schedulingPodNpuCount", schedulingPodNpuCount)
 	}
 
-	allocatableNpuCount, ok := nodeInfo.Allocatable.ScalarResources[v1.ResourceName(getResourceTypeFromNode(nodeInfo.Node()))]
-	if !ok {
-		return framework.NewStatus(framework.Unschedulable, "can not get allocatable_npu_count from node")
-	}
-
 	klog.InfoS("Node status", "nodeName", nodeInfo.Node().Name, "allocatableNpu", allocatableNpuCount, "allocatedNpu", allocatedNpuCount, "schedulingCount", schedulingPodNpuCount, "schedulingPod", pod.Name, npuResourceDomainLabel, nodeInfo.Node().Labels[npuResourceDomainLabel], npuResourceModelLabel, nodeInfo.Node().Labels[npuResourceModelLabel], "nodePodsNames", podNames)
 
 	if allocatableNpuCount-int64(allocatedNpuCount) < int64(schedulingPodNpuCount) {
@@ -83,14 +80,19 @@ func (pl *runnerScheduler) PreScore(ctx context.Context, state *framework.CycleS
 	return framework.NewStatus(framework.Success, "Pod: "+pod.Name)
 }
 
-func getResourceTypeFromNode(node *v1.Node) string {
-	domainLabel, domainLabelExists := node.Labels[npuResourceDomainLabel]
-	modelLabel, modelLabelExists := node.Labels[npuResourceModelLabel]
-
+func getAllocatableNpuCountFromNode(nodeInfo *framework.NodeInfo) (int64, error) {
+	domainLabel, domainLabelExists := nodeInfo.Node().Labels[npuResourceDomainLabel]
+	modelLabel, modelLabelExists := nodeInfo.Node().Labels[npuResourceModelLabel]
 	if !modelLabelExists || !domainLabelExists {
-		return ""
+		return 0, fmt.Errorf("fail to parse npu resource label. nodeName: %v, label: %v = %v, %v = %v", nodeInfo.Node().Name, npuResourceDomainLabel, domainLabel, npuResourceModelLabel, modelLabel)
 	}
-	return domainLabel + "/" + modelLabel
+
+	resourceType := domainLabel + "/" + modelLabel
+	allocatableNpuCount, ok := nodeInfo.Allocatable.ScalarResources[v1.ResourceName(resourceType)]
+	if !ok {
+		return 0, fmt.Errorf("fail to parse allocatable npu resource. nodeName: %v, label: %v = %v, %v = %v", nodeInfo.Node().Name, npuResourceDomainLabel, domainLabel, npuResourceModelLabel, modelLabel)
+	}
+	return allocatableNpuCount, nil
 }
 
 func extractNpuCountFromPodLabel(pod *v1.Pod) (int, bool, error) {
