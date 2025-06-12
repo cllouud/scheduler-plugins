@@ -1,6 +1,8 @@
 name: push to swr
 on:
-  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
 
 jobs:
   Run-npm-on-Ubuntu:
@@ -9,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: release-1.28
+          ref: ${{ github.ref_name }}
 
       - uses: docker/login-action@v3
         with:
@@ -32,4 +34,4 @@ jobs:
           push: true
           build-args: |
             ARCH=arm64v8
-          tags: ${{ secrets.SWR_IMAGE }}:${{ github.sha }}
+          tags: ${{ secrets.SWR_IMAGE }}:${{ github.ref_name }}
