@@ -39,9 +39,10 @@ func (pl *runnerScheduler) Name() string {
 // 当前节点的`label.ascend-ci.com/npu-resource-domain`与`ascend-ci.com/npu-resource-model`表明节点的NPU类型，根据NPU类型获当前节点的总卡数。
 // 遍历当前节点的所有pod，将其`label.ascend-ci.com/required-npu-count`相加，作为当前节点已分配卡数。
 // 如果当前节点的总卡数-当前节点已分配卡数<=pod所需NPU卡，则可以将pod分配到当前节点。
+// Filter函数用于过滤出符合条件的节点，返回一个framework.Status类型的结果
 func (pl *runnerScheduler) Filter(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
-	schedulingPodNpuCount, exists, err := extractNpuCountFromPodLabel(pod)
-	if !exists || err != nil {
+	schedulingPodNpuCount, err := extractNpuCountFromPodLabel(pod)
+	if err != nil {
 		return framework.NewStatus(framework.Unschedulable, err.Error())
 	}
 
@@ -56,8 +57,8 @@ func (pl *runnerScheduler) Filter(ctx context.Context, state *framework.CycleSta
 		if podInfo.Pod != nil {
 			podNames = append(podNames, podInfo.Pod.Name)
 		}
-		podNpuCount, exists, err := extractNpuCountFromPodLabel(podInfo.Pod)
-		if !exists || err != nil {
+		podNpuCount, err := extractNpuCountFromPodLabel(podInfo.Pod)
+		if err != nil {
 			continue
 		}
 		allocatedNpuCount += podNpuCount
@@ -95,15 +96,15 @@ func getAllocatableNpuCountFromNode(nodeInfo *framework.NodeInfo) (int64, error)
 	return allocatableNpuCount, nil
 }
 
-func extractNpuCountFromPodLabel(pod *v1.Pod) (int, bool, error) {
+func extractNpuCountFromPodLabel(pod *v1.Pod) (int, error) {
 	labelValue, exists := pod.Labels[npuCountLabel]
 	if !exists {
-		return 0, exists, nil
+		return 0, fmt.Errorf("fail to parse NPU label. pod: %v, podNamespace: %v, label: %v", pod.Name, pod.Namespace, npuCountLabel)
 	}
 
 	npuCount, err := strconv.Atoi(labelValue)
 	if err != nil {
-		return 0, exists, fmt.Errorf("failed to parse NPU count, pod: %v, label: %v", pod, pod.Labels[npuCountLabel])
+		return 0, fmt.Errorf("fail to parse NPU count. pod: %v, podNamespace: %v, label: %v", pod.Name, pod.Namespace, npuCountLabel)
 	}
-	return npuCount, exists, nil
+	return npuCount, nil
 }
